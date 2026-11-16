@@ -424,6 +424,14 @@
             ],
             "format": "date"
           },
+          "expectedDateLast": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date",
+            "description": "Last day when the email gave a range of days"
+          },
           "windowStart": {
             "type": [
               "string",

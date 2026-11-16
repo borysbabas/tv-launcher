@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {normalise, htmlToText, forwardingConfirmation} = require('../lib/mail');
-const {validate, merge, forToday, stale, placeOf, addresses, looksLikeShipping, carrierFromCode} = require('../lib/parcels');
+const {validate, hintFits, merge, forToday, stale, placeOf, addresses, looksLikeShipping, carrierFromCode} = require('../lib/parcels');
 
 const now = new Date('2026-10-19T08:00:00+02:00');
 
@@ -188,6 +188,7 @@ test("Proton's forwarding confirmation is recognised and its link kept", () => {
 /* ---------- the whole inbound path, Claude and storage faked ---------- */
 
 function fakeWorld(claudeAnswer) {
+	const answers = Array.isArray(claudeAnswer) ? [...claudeAnswer] : null;
 	const store = {hash: {}, keys: {}, log: []};
 	let claudeCalls = 0;
 	const realFetch = global.fetch;
@@ -195,7 +196,7 @@ function fakeWorld(claudeAnswer) {
 		if (String(url).startsWith('https://api.anthropic.com')) {
 			claudeCalls++;
 			assert.equal(JSON.parse(opts.body).tool_choice.name, 'record_shipments');
-			return new Response(JSON.stringify({content: [{type: 'tool_use', input: claudeAnswer}]}));
+			return new Response(JSON.stringify({content: [{type: 'tool_use', input: answers ? answers.shift() : claudeAnswer}]}));
 		}
 		const [cmd, ...args] = JSON.parse(opts.body);
 		let result = null;
@@ -211,7 +212,10 @@ function fakeWorld(claudeAnswer) {
 			}
 		}
 		if (cmd === 'DEL') delete store.keys[args[0]];
-		if (cmd === 'LPUSH') store.log.unshift(JSON.parse(args[1]));
+		if (cmd === 'LPUSH' && args[0] === 'inbound:log') store.log.unshift(JSON.parse(args[1]));
+		if (cmd === 'LPUSH' && args[0] === 'parcel:hints') (store.hints = store.hints || []).unshift(args[1]);
+		if (cmd === 'LRANGE' && args[0] === 'parcel:hints') result = store.hints || [];
+		if (cmd === 'LREM') store.hints = (store.hints || []).filter((h) => h !== args[2]);
 		return new Response(JSON.stringify({result}));
 	};
 	return {store, calls: () => claudeCalls, restore: () => (global.fetch = realFetch)};
@@ -254,6 +258,120 @@ test('inbound: an old carrier:code record is folded into the code-keyed one', as
 		await handle(mail(), env);
 		assert.deepEqual(Object.keys(world.store.hash), ['3SCOOL1234567']);
 		assert.equal(JSON.parse(world.store.hash['3SCOOL1234567']).status, 'out_for_delivery');
+	} finally {
+		world.restore();
+	}
+});
+
+/* ---------- ranges of days, and emails without a tracking code ---------- */
+
+const zalandoMail = (over = {}) =>
+	normalise({
+		FromFull: {Email: 'info@service-mail.zalando.nl', Name: 'Zalando'},
+		Subject: 'Jouw pakket wordt tussen 17.11. en 18.11. geleverd',
+		Date: '2026-11-16T18:10:49+01:00',
+		TextBody: 'Je bestelling is onderweg met PostNL. Track & Trace: 3STBKH585136340',
+		...over,
+	});
+const postnlMail = (over = {}) =>
+	normalise({
+		FromFull: {Email: 'notificatie@edm.postnl.nl', Name: 'PostNL'},
+		Subject: 'Verwacht: je pakket van Zalando',
+		Date: '2026-11-16T17:14:00+01:00',
+		TextBody: 'Je pakket van Zalando wordt dinsdag 17 november bezorgd tussen 13:15 en 15:15. Volg je pakket (https://click.edm.postnl.nl/abc)',
+		...over,
+	});
+const nov16 = new Date('2026-11-16T19:00:00+01:00');
+const zalandoAnswer = {is_shipping_email: true, shop: 'Zalando', confidence: 0.95, shipments: [{carrier: 'postnl', tracking_code: '3STBKH585136340', status: 'shipped', expected_date: '2026-11-17', expected_date_last: '2026-11-18'}]};
+const postnlAnswer = (over = {}) => ({is_shipping_email: true, shop: 'Zalando', confidence: 0.9, known_parcel: null, shipments: [{carrier: 'postnl', tracking_code: null, status: 'shipped', expected_date: '2026-11-17', window_start: '13:15', window_end: '15:15'}], ...over});
+
+test('a range of days is kept, and shown on each of its days', () => {
+	const {readings} = validate(zalandoAnswer, zalandoMail(), nov16);
+	assert.equal(readings[0].expectedDate, '2026-11-17');
+	assert.equal(readings[0].expectedDateLast, '2026-11-18');
+	const parcel = merge(null, readings[0], zalandoMail());
+	assert.equal(forToday([parcel], nov16).length, 0);
+	assert.equal(forToday([parcel], new Date('2026-11-17T09:00:00+01:00'))[0].status, 'expected today or tomorrow');
+	assert.equal(forToday([parcel], new Date('2026-11-18T09:00:00+01:00'))[0].status, 'expected today');
+	assert.equal(forToday([parcel], new Date('2026-11-19T09:00:00+01:00')).length, 0);
+	// a later email with one day narrows the range
+	const narrowed = merge(parcel, {...readings[0], expectedDate: '2026-11-17', expectedDateLast: null, windowStart: '13:15', windowEnd: '15:15'}, {date: '2026-11-17T07:00:00+01:00', subject: 'Vandaag'});
+	assert.equal(narrowed.expectedDateLast, null);
+	assert.equal(narrowed.windowStart, '13:15');
+});
+
+test('a backwards or long range is dropped, the first day kept', () => {
+	const shipments = [{...zalandoAnswer.shipments[0], expected_date_last: '2026-11-16'}];
+	assert.equal(validate({...zalandoAnswer, shipments}, zalandoMail(), nov16).readings[0].expectedDateLast, null);
+	shipments[0].expected_date_last = '2026-12-01';
+	const r = validate({...zalandoAnswer, shipments}, zalandoMail(), nov16).readings[0];
+	assert.deepEqual([r.expectedDate, r.expectedDateLast], ['2026-11-17', null]);
+});
+
+test('an email without a code is matched to a known parcel of the same shop', () => {
+	const known = [{key: '3STBKH585136340', code: '3STBKH585136340', carrier: 'postnl', shop: 'Zalando', status: 'shipped'}];
+	const {readings, rejected} = validate(postnlAnswer({known_parcel: '3STBKH585136340'}), postnlMail(), nov16, known);
+	assert.deepEqual(rejected, []);
+	assert.equal(readings[0].code, '3STBKH585136340');
+	assert.equal(readings[0].matched, true);
+	assert.equal(readings[0].windowStart, '13:15');
+});
+
+test('a codeless match is refused when it is not believable', () => {
+	const known = [
+		{code: '3STBKH585136340', carrier: 'postnl', shop: 'Zalando', status: 'shipped'},
+		{code: 'JVGL0612345678', carrier: 'dhl', shop: 'Coolblue', status: 'shipped'},
+		{code: '3SDONE00000001', carrier: 'postnl', shop: 'Zalando', status: 'delivered'},
+	];
+	const no = (ans) => validate(ans, postnlMail(), nov16, known).readings.length;
+	assert.equal(no(postnlAnswer({known_parcel: 'JVGL0612345678'})), 0); // Coolblue isn't in the email
+	assert.equal(no(postnlAnswer({known_parcel: '3SNOTKNOWN0001'})), 0); // not a known parcel
+	assert.equal(no(postnlAnswer({known_parcel: '3SDONE00000001'})), 0); // already delivered
+	assert.equal(no(postnlAnswer({known_parcel: '3STBKH585136340', confidence: 0.6})), 0); // unsure
+	assert.equal(no(postnlAnswer({known_parcel: '3STBKH585136340', shipments: [{carrier: 'dhl', tracking_code: null, status: 'shipped', expected_date: '2026-11-17'}]})), 0); // other carrier
+	const confirmation = validate(postnlAnswer({known_parcel: '3STBKH585136340', shipments: [{carrier: null, tracking_code: null, status: 'ordered'}]}), postnlMail(), nov16, known);
+	assert.deepEqual(confirmation.rejected, ['no tracking code yet (order confirmation?)']);
+});
+
+test('a codeless email for a parcel not known yet becomes a hint, used by the next parcel of that shop', () => {
+	const {readings, hint} = validate(postnlAnswer(), postnlMail(), nov16, []);
+	assert.equal(readings.length, 0);
+	assert.equal(hint.shop, 'Zalando');
+	assert.equal(hint.windowStart, '13:15');
+	assert.ok(hintFits(hint, {shop: 'Zalando', carrier: 'postnl'}, nov16));
+	assert.ok(!hintFits(hint, {shop: 'Coolblue', carrier: 'postnl'}, nov16));
+	assert.ok(!hintFits(hint, {shop: 'Zalando', carrier: 'dhl'}, nov16));
+	assert.ok(!hintFits(hint, {shop: 'Zalando', carrier: 'postnl'}, new Date('2026-11-24T19:00:00+01:00')));
+});
+
+test('inbound: PostNL first, then the shop: the parcel gets the day and window', async () => {
+	const world = fakeWorld([postnlAnswer(), zalandoAnswer]);
+	try {
+		const {handle} = require('../api/inbound');
+		assert.equal((await handle(postnlMail(), env)).result, 'hint');
+		assert.equal(world.store.hints.length, 1);
+		await handle(zalandoMail(), env);
+		const p = JSON.parse(world.store.hash['3STBKH585136340']);
+		// Zalando's email is newer: its range wins; PostNL's window fills in.
+		assert.deepEqual([p.expectedDate, p.expectedDateLast, p.windowStart, p.windowEnd], ['2026-11-17', '2026-11-18', '13:15', '15:15']);
+		assert.equal(world.store.hints.length, 0);
+		assert.match(world.store.log[0].result, /with an earlier codeless email/);
+	} finally {
+		world.restore();
+	}
+});
+
+test('inbound: the shop first, then PostNL without a code: matched by shop', async () => {
+	const world = fakeWorld([zalandoAnswer, postnlAnswer({known_parcel: '3STBKH585136340'})]);
+	try {
+		const {handle} = require('../api/inbound');
+		await handle(zalandoMail(), env);
+		const later = postnlMail({Date: '2026-11-17T07:00:00+01:00', Subject: 'Vandaag: je pakket van Zalando'});
+		const out = await handle(later, env);
+		assert.equal(out.result, 'parcel');
+		const p = JSON.parse(world.store.hash['3STBKH585136340']);
+		assert.deepEqual([p.expectedDate, p.expectedDateLast, p.windowStart], ['2026-11-17', null, '13:15']);
+		assert.match(world.store.log[0].result, /matched by shop/);
 	} finally {
 		world.restore();
 	}

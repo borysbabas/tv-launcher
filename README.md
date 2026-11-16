@@ -183,6 +183,15 @@ expected and handled:
   failed"; "delivered" is final), and dates and windows come from the newest
   email, so a late "shipped" email can't undo "out for delivery today".
 - **A rescheduled day** replaces the old one and clears the old window.
+- **A range of days** ("tussen 17.11. en 18.11.") is kept as a range; the
+  parcel shows on each of those days ("expected today or tomorrow"), and a
+  later email with one day narrows it.
+- **Emails without a tracking code** (PostNL's "Verwacht: je pakket van
+  Zalando"): Claude is shown the open parcels and names the one the email is
+  about. The match only counts if that parcel's shop is named in the email,
+  the carrier agrees and Claude is sure. If no parcel is known yet, the email's
+  day and window are kept for a week as a hint, and the shop's email with the
+  code picks them up.
 - **Emails at the same moment** about the same parcel wait for each other
   (a short lock per parcel), so neither overwrites the other.
 - **Newsletters** to shipping@ are filtered out by keywords before any Claude
