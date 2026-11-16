@@ -389,3 +389,21 @@ test('the plain text is used when the html gives nothing', () => {
 	const m = normalise({Subject: 'x', HtmlBody: '<html><body><img src="a.png"></body></html>', TextBody: 'Track & Trace: 3SCOOL1234567, morgen tussen 10:00 en 12:00'});
 	assert.match(m.text, /3SCOOL1234567/);
 });
+
+test('later this week: one line per dated parcel, soonest first', () => {
+	const {upcoming} = require('../lib/parcels');
+	const mon = new Date('2026-11-16T19:00:00+01:00');
+	const parcels = [
+		{key: 'z', carrier: 'postnl', shop: 'Zalando', status: 'shipped', expectedDate: '2026-11-17', expectedDateLast: '2026-11-18'},
+		{key: 'c', carrier: 'dhl', shop: 'Coolblue', status: 'shipped', expectedDate: '2026-11-19', windowStart: '10:00', windowEnd: '12:00'},
+		{key: 't', carrier: 'dpd', status: 'shipped', expectedDate: '2026-11-16'}, // today: in today's list instead
+		{key: 'f', carrier: 'ups', status: 'shipped', expectedDate: '2026-11-30'}, // too far
+		{key: 'n', carrier: 'gls', status: 'shipped', expectedDate: null}, // no date
+		{key: 'd', carrier: 'dhl', status: 'delivered', expectedDate: '2026-11-18'},
+	];
+	assert.deepEqual(upcoming(parcels, mon), [
+		{carrier: 'PostNL', for: null, shop: 'Zalando', date: '2026-11-17', when: 'tomorrow–Wed', window: null},
+		{carrier: 'DHL', for: null, shop: 'Coolblue', date: '2026-11-19', when: 'Thu', window: '10:00–12:00'},
+	]);
+	assert.deepEqual(forToday(parcels, mon).map((p) => p.carrier), ['DPD']);
+});

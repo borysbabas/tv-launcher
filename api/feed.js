@@ -4,7 +4,7 @@ const {tripTo} = require('../lib/travel');
 const {loadWeather} = require('../lib/weather');
 const {authorised, send, deny} = require('../lib/http');
 const {config: storeConfig, getParcels, putParcel} = require('../lib/store');
-const {forToday, verifyDhl} = require('../lib/parcels');
+const {forToday, upcoming, verifyDhl} = require('../lib/parcels');
 
 /**
  * GET /api/feed?token=…  — everything the screensaver shows, in one answer.
@@ -53,9 +53,13 @@ async function packages(env, now) {
 			await putParcel(p, env).catch(() => null);
 		})
 	);
+	const timeZone = env.HOME_TIMEZONE || 'Europe/Amsterdam';
+	const options = {otherDeliveries: env.OTHER_DELIVERIES || 'show'};
 	return {
 		configured: true,
-		items: forToday(parcels, now, env.HOME_TIMEZONE || 'Europe/Amsterdam', {otherDeliveries: env.OTHER_DELIVERIES || 'show'}),
+		items: forToday(parcels, now, timeZone, options),
+		// The rest of the week, for a quieter line under today's parcels.
+		upcoming: upcoming(parcels, now, timeZone, options),
 	};
 }
 
@@ -71,7 +75,7 @@ module.exports = async function handler(req, res) {
 			generatedAt: now.toISOString(),
 			nextUp: next.status === 'fulfilled' ? next.value : {configured: true, error: next.reason?.message || String(next.reason)},
 			weather: weather.status === 'fulfilled' ? weather.value : {configured: true, error: weather.reason?.message || String(weather.reason)},
-			packages: parcels.status === 'fulfilled' ? parcels.value : {configured: true, items: [], error: parcels.reason?.message || String(parcels.reason)},
+			packages: parcels.status === 'fulfilled' ? parcels.value : {configured: true, items: [], upcoming: [], error: parcels.reason?.message || String(parcels.reason)},
 			// Whether the launcher can send a route to the phone (POST /api/send).
 			phone: {push: Boolean(env.NTFY_TOPIC)},
 			// Night hours for the screensaver: "23-6" (default), "1-7", or "off".

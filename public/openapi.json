@@ -312,6 +312,12 @@
               },
               "error": {
                 "type": "string"
+              },
+              "upcoming": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ParcelUpcoming"
+                }
               }
             }
           }
@@ -452,6 +458,47 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ParcelUpcoming": {
+        "type": "object",
+        "description": "A parcel expected later this week (up to 7 days ahead), soonest first.",
+        "properties": {
+          "carrier": {
+            "type": "string",
+            "example": "PostNL"
+          },
+          "for": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "A label from OTHER_ADDRESSES, null for home."
+          },
+          "shop": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "Zalando"
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "First expected day."
+          },
+          "when": {
+            "type": "string",
+            "example": "tomorrow–Wed",
+            "description": "\"tomorrow\", a weekday, or a range of days."
+          },
+          "window": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "13:15–15:15"
           }
         }
       }

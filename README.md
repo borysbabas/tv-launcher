@@ -167,8 +167,9 @@ email to `/api/inbound?token=INBOUND_TOKEN`.
    make sense. Low-confidence readings are logged, not shown.
 3. DHL parcels are confirmed with DHL's tracking API, and re-checked every
    15 minutes while the TV is on. PostNL follows PostNL's own emails.
-4. The TV only shows parcels that matter today: out for delivery, expected
-   today, or delivered today.
+4. The TV shows parcels that matter today (out for delivery, expected today,
+   or delivered today) with their progress, and under them one quiet line per
+   parcel expected later this week ("Zalando · PostNL   tomorrow–Wed").
 
 Many emails about the same parcels (the shop, bol.com, PostNL, all three) are
 expected and handled:

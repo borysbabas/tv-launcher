@@ -105,6 +105,7 @@
   .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .steps i { height: 3px; border-radius: 2px; background: rgba(255,255,255,.14); transition: background .8s ease; }
   .steps i.done { background: var(--accent); }
+  .soon { font-size: 21px; color: var(--muted); }
   .divider { height: 1px; background: var(--line); }
 
   .credit { position: absolute; top: 48px; right: 132px; padding: 6px 14px; border-radius: 16px; background: rgba(0,0,0,.35); font-size: 18px; letter-spacing: 0.01em; color: rgba(255,255,255,.82); opacity: 0; transition: opacity .8s ease; }
@@ -532,10 +533,11 @@
   function renderFeed() {
     var card = $('feed');
     var pkgs = (feed && feed.packages && feed.packages.items) || [];
-    if (document.body.classList.contains('night')) pkgs = [];
-    if (!music && !pkgs.length) { hide(card); return; }
+    var soon = (feed && feed.packages && feed.packages.upcoming) || [];
+    if (document.body.classList.contains('night')) { pkgs = []; soon = []; }
+    if (!music && !pkgs.length && !soon.length) { hide(card); return; }
 
-    var key = (music ? [music.title, music.artist, music.app, music.art ? music.art.length : 0].join('|') : '-') + '#' + JSON.stringify(pkgs);
+    var key = (music ? [music.title, music.artist, music.app, music.art ? music.art.length : 0].join('|') : '-') + '#' + JSON.stringify([pkgs, soon]);
     var rebuilt = fill(card, key, function (inner) {
       card._bar = null;
       if (music) {
@@ -575,6 +577,14 @@
         for (var i = 0; i < 3; i++) steps.appendChild(el('i', i < (p.step || 0) ? 'done' : ''));
         info.appendChild(steps);
         row.appendChild(info);
+        inner.appendChild(row);
+      });
+      // Later this week: one quiet line each, under today's.
+      if (soon.length && (music || pkgs.length)) inner.appendChild(el('div', 'divider'));
+      soon.forEach(function (p) {
+        var row = el('div', 'row between soon');
+        row.appendChild(el('span', 'ellipsis', [p.shop, p.carrier, p.for ? 'for ' + p.for : null].filter(Boolean).join(' · ')));
+        row.appendChild(el('span', 'mono', p.when + (p.window ? ' ' + p.window : '')));
         inner.appendChild(row);
       });
     });

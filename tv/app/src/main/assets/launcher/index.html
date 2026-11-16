@@ -113,6 +113,9 @@
   .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
   .steps i { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.22); }
   .steps i.done { background: var(--accent); }
+  .soon { display: flex; justify-content: space-between; gap: 16px; font-size: 19px; color: var(--muted); white-space: nowrap; }
+  .soon span:first-child { overflow: hidden; text-overflow: ellipsis; }
+  .parcel + .soon, .media + .soon { margin-top: 6px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.1); }
 
   /* ---------- rows of tiles ---------- */
   .row { position: relative; display: flow-root; }   /* flow-root: the track's negative margins must not leak out */
@@ -672,7 +675,8 @@
     try { var raw = bridge && bridge.nowPlaying(); music = raw ? JSON.parse(raw) : null; } catch (e) { music = null; }
     var n = feed && feed.nextUp;
     var parcels = (feed && feed.packages && feed.packages.items) || [];
-    var key = JSON.stringify([n && n.event, n && n.trip && n.trip.leaveAt, n && n.trip && n.trip.disrupted, n && n.trip && (n.trip.options || []).map(function (o) { return o.leaveAt + o.disrupted; }), music && [music.title, music.artist], parcels]);
+    var soon = (feed && feed.packages && feed.packages.upcoming) || [];
+    var key = JSON.stringify([n && n.event, n && n.trip && n.trip.leaveAt, n && n.trip && n.trip.disrupted, n && n.trip && (n.trip.options || []).map(function (o) { return o.leaveAt + o.disrupted; }), music && [music.title, music.artist], parcels, soon]);
     if (key === lastNow) return;       // nothing changed: no rebuild, no flicker
     if (lastNow) stageForFocus();      // a new song: Tidal's backdrop follows
     lastNow = key;
@@ -703,7 +707,7 @@
       box.appendChild(c);
     }
 
-    if (music || parcels.length) {
+    if (music || parcels.length || soon.length) {
       var f = el('div', 'card glass');
       if (music) {
         var m = el('div', 'media');
@@ -726,6 +730,13 @@
         for (var i = 0; i < 3; i++) steps.appendChild(el('i', i < (p.step || 0) ? 'done' : ''));
         row.appendChild(steps);
         f.appendChild(row);
+      });
+      // Later this week: one quiet line each, no progress bar.
+      soon.forEach(function (p) {
+        var line = el('div', 'soon');
+        line.appendChild(el('span', null, [p.shop, p.carrier, p.for ? 'for ' + p.for : null].filter(Boolean).join(' · ')));
+        line.appendChild(el('span', 'mono', p.when + (p.window ? ' ' + p.window : '')));
+        f.appendChild(line);
       });
       box.appendChild(f);
     }
