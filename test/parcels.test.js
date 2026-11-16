@@ -376,3 +376,16 @@ test('inbound: the shop first, then PostNL without a code: matched by shop', asy
 		world.restore();
 	}
 });
+
+test("PostNL's html with the whole body inside <head> still reads", () => {
+	const html = '<html><head><title>PostNL</title><style>p{color:red}</style><!--[if mso]><style>x{}</style><![endif]--><body><h1>Hoi, we bezorgen binnenkort je pakket van Zalando</h1><p><b>Track &amp; trace-code</b><br>3STBKH585136340</p></body></head></html>';
+	const m = normalise({Subject: 'Verwacht: je pakket van Zalando', HtmlBody: html, TextBody: ''});
+	assert.match(m.text, /je pakket van Zalando/);
+	assert.match(m.text, /3STBKH585136340/);
+	assert.doesNotMatch(m.text, /color:red|PostNL$/);
+});
+
+test('the plain text is used when the html gives nothing', () => {
+	const m = normalise({Subject: 'x', HtmlBody: '<html><body><img src="a.png"></body></html>', TextBody: 'Track & Trace: 3SCOOL1234567, morgen tussen 10:00 en 12:00'});
+	assert.match(m.text, /3SCOOL1234567/);
+});
