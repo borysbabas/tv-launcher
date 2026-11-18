@@ -1,18 +1,35 @@
 # tv-launcher
 
+![tv-launcher API explorer](docs/thumbnail.jpg)
+
 A clean, fast, bloat-free setup for a Sony Bravia A1 (Android TV): an ambient
 screensaver with rotating photos, a clock, a **Next up** card that plans your
 trip to the next calendar event, a now-playing card and today's parcels, plus
-a home screen of its own.
+a home screen of its own. The screenshot is the API explorer at
+[tv-launcher-seven.vercel.app](https://tv-launcher-seven.vercel.app), which is
+styled like the launcher.
 
+## Stack
+
+| | |
+|---|---|
+| TV app | Kotlin: a screensaver service, a launcher activity and a thin WebView shell |
+| Pages | Plain HTML, CSS and JavaScript in `public/`, set in Iosevka |
+| API | Vercel functions (Node), tested with `node --test` |
+| Data | iCloud CalDAV, NS, Google Maps and Routes, Open-Meteo and Buienradar, Unsplash, TMDB, TIDAL, DHL |
+| Parcels | Postmark inbound email, read by Claude, state in Upstash |
+| Pushes | ntfy |
+| CI | GitHub Actions: API tests and the APK build |
+
+## Getting started
+
+```bash
+npm install
+npm test        # tests for lib/
+npm run dev     # vercel dev, with the variables from .env.example
 ```
-api/            Vercel functions: /api/feed (calendar, route, weather, parcels),
-                /api/photos, /api/trending, /api/inbound + /api/inbox (parcel emails)
-lib/            the logic behind them, tested in test/
-public/         the screensaver page itself (served by Vercel, shown by the TV app)
-tv/             Android TV app: screensaver service + preview app, a thin WebView shell
-.github/        CI: API tests, and the APK build
-```
+
+The full setup (Vercel, GitHub secrets and the TV itself) is under [Setup](#setup).
 
 ## How it fits together
 
@@ -221,9 +238,14 @@ With the TV connected over adb, open `chrome://inspect` in Chrome on the
 computer: the launcher's page shows up there, with its console (lines starting
 with `[stage]` say whether trending and photos loaded) and a live view.
 
-## Tests
+## Project structure
 
-```bash
-npm install
-npm test
-```
+| Path | |
+|---|---|
+| `api/` | Vercel functions: `/api/feed` (calendar, route, weather, parcels), `/api/photos`, `/api/trending`, `/api/discovery`, `/api/status`, `/api/send`, `/api/inbound` and `/api/inbox` (parcel emails), `/api/tidal/` |
+| `lib/` | The logic behind them, tested in `test/` |
+| `public/screensaver/` | The screensaver page itself, shown by the TV app |
+| `public/docs/` | The API explorer; the spec is `public/openapi.json` |
+| `public/trip/` | A route step by step, opened from the phone push |
+| `tv/` | Android TV app: screensaver service, launcher and preview app, a thin WebView shell |
+| `.github/workflows/` | API tests, and the APK build |
